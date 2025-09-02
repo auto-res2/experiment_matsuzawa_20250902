@@ -157,7 +157,7 @@ def run_exp1():
         fname = f"{metric}_cifar100.pdf"
         save_lineplot(xs, ys_dict, ylabel, f"{metric.upper()} vs Task", fname)
 
-    print("Figures saved in .research/iteration10/images.")
+    print("Figures saved in .research/iteration11/images.")
 
 # -----------------------------------------------------------------------------
 #  CLI

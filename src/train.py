@@ -25,7 +25,13 @@ import timm
 class FDSketch(nn.Module):
     """Lightweight Frequent-Directions sketch storing a per-class low-rank basis."""
 
-    def __init__(self, d: int, k: int, device: str = "cuda", dtype: torch.dtype = torch.float32):
+    def __init__(
+        self,
+        d: int,
+        k: int,
+        device: str | torch.device = "cuda",
+        dtype: torch.dtype = torch.float32,
+    ):
         super().__init__()
         self.k = k
         self.d = d
@@ -45,17 +51,37 @@ class FDSketch(nn.Module):
         u = x.view(-1, 1)  # (d,1)
         # cast to float32 for robust SVD on GPU/CPU
         S_hat = torch.cat([self.S, u], dim=1).float()  # (d, k+1)
-        try:
-            # Regular attempt on the current device (GPU if available)
-            u_svd, s, _ = torch.linalg.svd(S_hat, full_matrices=False)
-        except RuntimeError:
-            # ------------------------------------------------------------------
-            # Fallback (numerically safer): move to CPU with double precision
-            # ------------------------------------------------------------------
-            S_hat_cpu = S_hat.cpu().double()
-            u_svd_cpu, s_cpu, _ = torch.linalg.svd(S_hat_cpu, full_matrices=False)
-            u_svd = u_svd_cpu.to(S_hat.device, self.S.dtype)
-            s = s_cpu.to(S_hat.device, self.S.dtype)
+
+        # Helper performing SVD on provided tensor
+        def _safe_svd(mat: torch.Tensor):
+            try:
+                return torch.linalg.svd(mat, full_matrices=False)
+            except Exception:
+                return None
+
+        # 1) Try on the current device first
+        svd_out = _safe_svd(S_hat)
+
+        # 2) Fallback – CPU double precision
+        if svd_out is None:
+            svd_out = _safe_svd(S_hat.cpu().double())
+            if svd_out is not None:
+                svd_out = tuple(t.to(S_hat.device, self.S.dtype) for t in svd_out)
+
+        # 3) Last–resort – add a small jitter and retry (CPU double)
+        if svd_out is None:
+            jitter = (1e-4 * torch.randn_like(S_hat)).cpu().double()
+            svd_out = _safe_svd((S_hat.cpu().double() + jitter))
+            if svd_out is not None:
+                svd_out = tuple(t.to(S_hat.device, self.S.dtype) for t in svd_out)
+
+        # If *all* attempts fail we skip the update for this sample.
+        if svd_out is None:
+            print("[WARN] SVD failed in FDSketch.update – skipping this update step.")
+            return
+
+        u_svd, s, _ = svd_out
+
         # Shrinkage step
         shrink = torch.clamp_min(s ** 2 - s[-1] ** 2, 0).sqrt()
         self.S = (u_svd[:, : self.k] * shrink[: self.k]).to(self.S.dtype)
@@ -295,7 +321,7 @@ def train_one_task(
                     for feat, lbl in zip(real_feats, yb_curr):
                         lbl_int = int(lbl)
                         if lbl_int not in sketches:
-                            sketches[lbl_int] = FDSketch(768, k=12)
+                            sketches[lbl_int] = FDSketch(768, k=12, device=feat.device)
                         sketches[lbl_int].update(feat.detach())
 
 __all__ = [
