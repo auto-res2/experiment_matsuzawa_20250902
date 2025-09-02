@@ -1,1 +1,12 @@
-# Please list the required python packages.
+torch>=1.13
+torchvision>=0.14
+torchtext>=0.14
+timm
+numpy
+pandas
+seaborn
+matplotlib
+tqdm
+fvcore
+scikit-learn
+hydra-core
