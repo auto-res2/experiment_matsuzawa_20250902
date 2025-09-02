@@ -47,17 +47,26 @@ class Metrics:
 #  Plot helpers ----------------------------------------------------------------
 # -----------------------------------------------------------------------------
 
-def save_line_plot(x: List, y: List, *, xlabel: str, ylabel: str, title: str, filename: str) -> None:
-    """Save a labelled line-plot as *figures/<filename>.pdf*.
+def save_line_plot(
+    x: List,
+    y: List,
+    *,
+    xlabel: str,
+    ylabel: str,
+    title: str,
+    filename: str,
+) -> None:
+    """Save a labelled line-plot as a PDF file.
 
-    For cleanliness we keep plotting related imports *inside* the function.
+    The figure is stored inside ``.research/iteration4/images`` as requested in
+    the project instructions so that all generated images reside in a single
+    dedicated directory.
     """
     sns.set(style="whitegrid")
     plt.figure(figsize=(6, 4))
     plt.plot(x, y, marker="o", label=title)
     for xi, yi in zip(x, y):
-        plt.annotate(f"{yi:.1f}", (xi, yi), textcoords="offset points",
-                     xytext=(0, 5), ha="center", fontsize=7)
+        plt.annotate(f"{yi:.1f}", (xi, yi), textcoords="offset points", xytext=(0, 5), ha="center", fontsize=7)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.title(title)
@@ -65,9 +74,9 @@ def save_line_plot(x: List, y: List, *, xlabel: str, ylabel: str, title: str, fi
     plt.tight_layout()
 
     # ------------------------------------------------------------------
-    # Save figure in the requested directory
+    # Save figure in the requested directory (.research/iteration4/images)
     # ------------------------------------------------------------------
-    img_dir = Path(".research/iteration3/images")  # updated directory as requested
+    img_dir = Path(".research/iteration4/images")
     img_dir.mkdir(parents=True, exist_ok=True)
     path = img_dir / f"{filename}.pdf"
     try:
