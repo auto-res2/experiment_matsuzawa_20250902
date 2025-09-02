@@ -6,6 +6,7 @@ Run with:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 from typing import Dict, List
@@ -14,8 +15,8 @@ import numpy as np
 import torch
 import torch.optim as optim
 import torch.utils.data as tud
-from torch.cuda import amp
 from sklearn.metrics import accuracy_score
+from torch.cuda import amp
 
 # Local imports
 from src.preprocess import get_split_cifar100, set_seed
@@ -28,23 +29,53 @@ from src.train import (
 from src.evaluate import calc_avg_acc, calc_forgetting, save_lineplot
 
 # -----------------------------------------------------------------------------
+#  Helper – ensure stream split exists
+# -----------------------------------------------------------------------------
+
+def _ensure_split_json() -> Path:
+    """Create a default sequential split file if it doesn't already exist."""
+    split_path = Path("streams/split_cifar100.json")
+    if split_path.is_file():
+        return split_path
+
+    print(f"[INFO] Required split file '{split_path}' not found – generating default split.")
+    split_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Deterministic sequential 20×5 class split
+    split = {str(i): list(range(i * 5, (i + 1) * 5)) for i in range(20)}
+
+    with split_path.open("w") as f:
+        json.dump(split, f)
+
+    print(f"[INFO] Default split file generated at '{split_path}'.")
+    return split_path
+
+# -----------------------------------------------------------------------------
 #  Experiment 1 – Split CIFAR-100
 # -----------------------------------------------------------------------------
 
 def run_exp1():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     print("==== Experiment-1: Head-to-Head Memory–Accuracy Benchmark ====")
     print("Dataset : Split CIFAR-100  (20 × 5 classes)")
     print("Backbone: ViT-B/16 + LoRA  |  Methods: FSR, ER, Finetune")
 
-    results: Dict[str, Dict[str, List[float]]] = {m: {"acc": [], "fgt": []} for m in ["FSR", "ER", "Finetune"]}
+    # Ensure the JSON split file is present
+    _ensure_split_json()
+
+    results: Dict[str, Dict[str, List[float]]] = {
+        m: {"acc": [], "fgt": []} for m in ["FSR", "ER", "Finetune"]
+    }
 
     for seed in [21, 42, 84]:
         set_seed(seed)
         for method in results.keys():
             model = ViTLoRAClassifier(num_classes=100, fsr=(method == "FSR")).to(device)
             opt = optim.AdamW(
-                filter(lambda p: p.requires_grad, model.parameters()), lr=5e-4, weight_decay=0.05
+                filter(lambda p: p.requires_grad, model.parameters()),
+                lr=5e-4,
+                weight_decay=0.05,
             )
             scaler = amp.GradScaler()
             buffer = ReservoirBuffer(25 * 100) if method == "ER" else None
@@ -63,7 +94,9 @@ def run_exp1():
                     train=True,
                 )
                 seen_classes += cls_ids
-                loader = tud.DataLoader(subset_train, batch_size=64, shuffle=True, num_workers=4)
+                loader = tud.DataLoader(
+                    subset_train, batch_size=64, shuffle=True, num_workers=4
+                )
 
                 train_one_task(
                     model=model,
@@ -87,7 +120,9 @@ def run_exp1():
                             task_id=j,
                             train=False,
                         )
-                        test_loader = tud.DataLoader(subset_test, batch_size=128, shuffle=False, num_workers=4)
+                        test_loader = tud.DataLoader(
+                            subset_test, batch_size=128, shuffle=False, num_workers=4
+                        )
                         preds, gts = [], []
                         for xb, yb in test_loader:
                             xb = xb.to(device, non_blocking=True)
@@ -110,15 +145,20 @@ def run_exp1():
     for m, rec in results.items():
         acc_mean, acc_std = np.mean(rec["acc"]), np.std(rec["acc"])
         fgt_mean, fgt_std = np.mean(rec["fgt"]), np.std(rec["fgt"])
-        print(f"{m:9s} | ACC  {acc_mean:5.2f} ± {acc_std:4.2f} | FGT  {fgt_mean:5.2f} ± {fgt_std:4.2f}")
+        print(
+            f"{m:9s} | ACC  {acc_mean:5.2f} ± {acc_std:4.2f} | FGT  {fgt_mean:5.2f} ± {fgt_std:4.2f}"
+        )
 
     xs = list(range(1, 21))
-    for metric, ylabel in [("acc", "Average Accuracy (%)"), ("fgt", "Average Forgetting (%)")]:
+    for metric, ylabel in [
+        ("acc", "Average Accuracy (%)"),
+        ("fgt", "Average Forgetting (%)"),
+    ]:
         ys_dict = {m: results[m][metric] for m in results}
         fname = f"{metric}_cifar100.pdf"
         save_lineplot(xs, ys_dict, ylabel, f"{metric.upper()} vs Task", fname)
 
-    print("Figures saved in working directory.")
+    print("Figures saved in .research/iteration2/images.")
 
 # -----------------------------------------------------------------------------
 #  CLI
@@ -139,9 +179,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # Ensure current working directory contains needed files
-    req_json = Path("streams/split_cifar100.json")
-    if not req_json.is_file():
-        print(f"[ERROR] Required split file '{req_json}' not found. Aborting.")
-        exit(1)
     main()

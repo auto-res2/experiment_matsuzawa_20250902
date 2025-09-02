@@ -3,6 +3,7 @@ Evaluation utilities: metrics computation and plotting helpers.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Dict, List
 
 import numpy as np
@@ -41,7 +42,15 @@ def save_lineplot(
     title: str,
     fname: str,
 ):
-    """Save a publication-quality line plot *fname* in PDF format."""
+    """Save a publication-quality line plot *fname* in PDF format.
+
+    All images are stored under `.research/iteration2/images` as required.
+    """
+    # Ensure the output directory exists
+    out_dir = Path(".research/iteration2/images")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    full_path = out_dir / fname
+
     plt.figure(figsize=(6, 4))
     for name, ys in ys_dict.items():
         plt.plot(xs, ys, marker="o", label=name)
@@ -53,10 +62,10 @@ def save_lineplot(
     plt.legend()
     plt.tight_layout()
     try:
-        plt.savefig(fname, bbox_inches="tight")
-        print(f"Saved figure → {fname}")
+        plt.savefig(full_path, bbox_inches="tight")
+        print(f"Saved figure → {full_path}")
     except Exception as e:
-        print(f"[WARN] Could not save figure {fname}: {e}")
+        print(f"[WARN] Could not save figure {full_path}: {e}")
     plt.close()
 
 __all__ = ["calc_avg_acc", "calc_forgetting", "save_lineplot"]
