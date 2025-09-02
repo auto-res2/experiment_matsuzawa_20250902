@@ -46,10 +46,17 @@ class FDSketch(nn.Module):
         # cast to float32 for robust SVD on GPU/CPU
         S_hat = torch.cat([self.S, u], dim=1).float()  # (d, k+1)
         try:
+            # Regular attempt on the current device (GPU if available)
             u_svd, s, _ = torch.linalg.svd(S_hat, full_matrices=False)
         except RuntimeError:
-            # fallback for older torch versions
-            u_svd, s, _ = torch.svd(S_hat)
+            # ------------------------------------------------------------------
+            # Fallback (numerically safer): move to CPU with double precision
+            # ------------------------------------------------------------------
+            S_hat_cpu = S_hat.cpu().double()
+            u_svd_cpu, s_cpu, _ = torch.linalg.svd(S_hat_cpu, full_matrices=False)
+            u_svd = u_svd_cpu.to(S_hat.device, self.S.dtype)
+            s = s_cpu.to(S_hat.device, self.S.dtype)
+        # Shrinkage step
         shrink = torch.clamp_min(s ** 2 - s[-1] ** 2, 0).sqrt()
         self.S = (u_svd[:, : self.k] * shrink[: self.k]).to(self.S.dtype)
 
