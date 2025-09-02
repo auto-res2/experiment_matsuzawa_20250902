@@ -6,5 +6,82 @@
     "sparse rehearsal continual learning",
     "elastic weight consolidation",
     "parameter-efficient continual learning"
+  ],
+  "research_study_list": [
+    {
+      "title": "Continual Learning in Low-rank Orthogonal Subspaces"
+    },
+    {
+      "title": "Contextual Transformation Networks for Online Continual Learning"
+    },
+    {
+      "title": "Improving Task-free Continual Learning by Distributionally Robust Memory Evolution"
+    },
+    {
+      "title": "Improving Task-free Continual Learning by Distributionally Robust Memory Evolution"
+    },
+    {
+      "title": "SparCL: Sparse Continual Learning on the Edge"
+    },
+    {
+      "title": "Improving Computational Efficiency in Visual Reinforcement Learning via Stored Embeddings"
+    },
+    {
+      "title": "Replay Memory as An Empirical MDP: Combining Conservative Estimation with Experience Replay"
+    },
+    {
+      "title": "Revisiting Fundamentals of Experience Replay"
+    },
+    {
+      "title": "Prioritizing Samples in Reinforcement Learning with Reducible Loss"
+    },
+    {
+      "title": "Robust Predictable Control"
+    },
+    {
+      "title": "SparCL: Sparse Continual Learning on the Edge"
+    },
+    {
+      "title": "A simple but strong baseline for online continual learning: Repeated Augmented Rehearsal"
+    },
+    {
+      "title": "Graph-Based Continual Learning"
+    },
+    {
+      "title": "NISPA: Neuro-Inspired Stability-Plasticity Adaptation for Continual Learning in Sparse Networks"
+    },
+    {
+      "title": "NISPA: Neuro-Inspired Stability-Plasticity Adaptation for Continual Learning in Sparse Networks"
+    },
+    {
+      "title": "Elastic Aggregation for Federated Optimization"
+    },
+    {
+      "title": "Weighted distance nearest neighbor condensing"
+    },
+    {
+      "title": "The Elastic Lottery Ticket Hypothesis"
+    },
+    {
+      "title": "EMR-Merging: Tuning-Free High-Performance Model Merging"
+    },
+    {
+      "title": "$C^2M^3$: Cycle-Consistent Multi-Model Merging"
+    },
+    {
+      "title": "InfLoRA: Interference-Free Low-Rank Adaptation for Continual Learning"
+    },
+    {
+      "title": "Semantically-Shifted Incremental Adapter-Tuning is A Continual ViTransformer"
+    },
+    {
+      "title": "SAFE: Slow and Fast Parameter-Efficient Tuning for Continual Learning with Pre-Trained Models"
+    },
+    {
+      "title": "Overcoming Generic Knowledge Loss with Selective Parameter Update"
+    },
+    {
+      "title": "Does Continual Learning Equally Forget All Parameters?"
+    }
   ]
 }
