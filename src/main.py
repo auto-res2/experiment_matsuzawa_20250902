@@ -12,8 +12,8 @@ from typing import Dict, List
 
 import numpy as np
 
-from evaluate import Metrics, save_line_plot
-from train import train_stream
+from .evaluate import Metrics, save_line_plot
+from .train import train_stream
 
 # -----------------------------------------------------------------------------
 #  Demo Experiment (≈10 min CPU) ----------------------------------------------

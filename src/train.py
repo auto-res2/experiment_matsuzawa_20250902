@@ -16,8 +16,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 
-from evaluate import Metrics  # metric container (no circular import)
-from preprocess import get_split_cifar100, set_seed
+from .evaluate import Metrics  # metric container (no circular import)
+from .preprocess import get_split_cifar100, set_seed
 
 # -----------------------------------------------------------------------------
 #  Device helper ----------------------------------------------------------------
