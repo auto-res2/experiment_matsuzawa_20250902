@@ -1,0 +1,2 @@
+usage: main.py [-h] {exp1}
+main.py: error: the following arguments are required: exp
