@@ -1,0 +1,10 @@
+{
+  "research_topic": "Continuous Learningのメモリ効率に関して改善したい",
+  "queries": [
+    "memory-efficient continual learning",
+    "compressive experience replay",
+    "sparse rehearsal continual learning",
+    "elastic weight consolidation",
+    "parameter-efficient continual learning"
+  ]
+}
