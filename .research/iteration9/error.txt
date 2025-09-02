@@ -1,0 +1,33 @@
+/home/runner/work/experiment_matsuzawa_20250902/experiment_matsuzawa_20250902/src/main.py:79: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = amp.GradScaler()
+  0%|          | 0.00/169M [00:00<?, ?B/s]  0%|          | 65.5k/169M [00:00<05:39, 498kB/s]  0%|          | 229k/169M [00:00<02:56, 957kB/s]   1%|          | 918k/169M [00:00<00:56, 2.98MB/s]  2%|▏         | 2.88M/169M [00:00<00:19, 8.60MB/s]  4%|▍         | 6.65M/169M [00:00<00:09, 18.0MB/s]  6%|▌         | 10.4M/169M [00:00<00:06, 23.9MB/s]  8%|▊         | 13.9M/169M [00:00<00:05, 27.4MB/s] 11%|█         | 17.9M/169M [00:00<00:04, 31.3MB/s] 14%|█▎        | 23.1M/169M [00:00<00:03, 37.6MB/s] 16%|█▌        | 27.1M/169M [00:01<00:03, 38.1MB/s] 19%|█▉        | 32.4M/169M [00:01<00:03, 42.6MB/s] 22%|██▏       | 36.8M/169M [00:01<00:03, 42.1MB/s] 25%|██▍       | 42.0M/169M [00:01<00:02, 45.2MB/s] 28%|██▊       | 46.6M/169M [00:01<00:02, 44.4MB/s] 31%|███       | 51.8M/169M [00:01<00:02, 46.7MB/s] 33%|███▎      | 56.5M/169M [00:01<00:02, 45.7MB/s] 37%|███▋      | 61.9M/169M [00:01<00:02, 44.6MB/s] 40%|███▉      | 67.1M/169M [00:01<00:02, 46.7MB/s] 43%|████▎     | 71.9M/169M [00:02<00:02, 45.8MB/s] 46%|████▌     | 77.1M/169M [00:02<00:01, 47.7MB/s] 48%|████▊     | 81.9M/169M [00:02<00:01, 46.5MB/s] 52%|█████▏    | 87.4M/169M [00:02<00:01, 45.2MB/s] 55%|█████▍    | 92.7M/169M [00:02<00:01, 47.6MB/s] 58%|█████▊    | 97.6M/169M [00:02<00:01, 46.4MB/s] 61%|██████    | 103M/169M [00:02<00:01, 48.4MB/s]  64%|██████▍   | 108M/169M [00:02<00:01, 46.9MB/s] 67%|██████▋   | 113M/169M [00:02<00:01, 44.8MB/s] 70%|██████▉   | 118M/169M [00:03<00:01, 47.4MB/s] 73%|███████▎  | 123M/169M [00:03<00:00, 46.2MB/s] 76%|███████▌  | 128M/169M [00:03<00:00, 48.2MB/s] 79%|███████▉  | 133M/169M [00:03<00:00, 45.6MB/s] 82%|████████▏ | 138M/169M [00:03<00:00, 44.6MB/s] 84%|████████▍ | 142M/169M [00:03<00:00, 45.0MB/s] 87%|████████▋ | 147M/169M [00:03<00:00, 45.2MB/s] 90%|████████▉ | 152M/169M [00:03<00:00, 44.3MB/s] 92%|█████████▏| 156M/169M [00:03<00:00, 44.5MB/s] 95%|█████████▌| 161M/169M [00:03<00:00, 45.4MB/s] 98%|█████████▊| 166M/169M [00:04<00:00, 44.2MB/s]100%|██████████| 169M/169M [00:04<00:00, 40.6MB/s]
+/home/runner/work/experiment_matsuzawa_20250902/experiment_matsuzawa_20250902/src/train.py:258: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with amp.autocast():
+/home/runner/work/experiment_matsuzawa_20250902/experiment_matsuzawa_20250902/src/train.py:49: UserWarning: torch.linalg.svd: During SVD computation with the selected cusolver driver, batches 0 failed to converge. A more accurate method will be used to compute the SVD as a fallback. Check doc at https://pytorch.org/docs/stable/generated/torch.linalg.svd.html (Triggered internally at /pytorch/aten/src/ATen/native/cuda/linalg/BatchLinearAlgebraLib.cpp:702.)
+  u_svd, s, _ = torch.linalg.svd(S_hat, full_matrices=False)
+Traceback (most recent call last):
+  File "/home/runner/work/experiment_matsuzawa_20250902/experiment_matsuzawa_20250902/src/train.py", line 49, in update
+    u_svd, s, _ = torch.linalg.svd(S_hat, full_matrices=False)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+torch._C._LinAlgError: linalg.svd: The algorithm failed to converge because the input matrix is ill-conditioned or has too many repeated singular values (error code: 13).
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/runner/work/experiment_matsuzawa_20250902/experiment_matsuzawa_20250902/src/main.py", line 187, in <module>
+    main()
+  File "/home/runner/work/experiment_matsuzawa_20250902/experiment_matsuzawa_20250902/src/main.py", line 181, in main
+    run_exp1()
+  File "/home/runner/work/experiment_matsuzawa_20250902/experiment_matsuzawa_20250902/src/main.py", line 100, in run_exp1
+    train_one_task(
+  File "/home/runner/work/experiment_matsuzawa_20250902/experiment_matsuzawa_20250902/src/train.py", line 292, in train_one_task
+    sketches[lbl_int].update(feat.detach())
+  File "/home/runner/work/_tool/Python/3.11.13/x64/lib/python3.11/site-packages/torch/utils/_contextlib.py", line 120, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/experiment_matsuzawa_20250902/experiment_matsuzawa_20250902/src/train.py", line 52, in update
+    u_svd, s, _ = torch.svd(S_hat)
+                  ^^^^^^^^^^^^^^^^
+torch._C._LinAlgError: linalg.svd: The algorithm failed to converge because the input matrix is ill-conditioned or has too many repeated singular values (error code: 13).
