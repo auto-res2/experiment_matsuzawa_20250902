@@ -142,6 +142,9 @@ class ViTLoRAClassifier(nn.Module):
         """
         if feats is None:
             feats = self.backbone.forward_features(x)
+            # If the ViT returns a sequence of tokens (B, N, D) average-pool them
+            if feats.dim() == 3:
+                feats = feats.mean(dim=1)  # (B, D)
             for adp in self.lora_adapters:  # simple residual LoRA adapters
                 feats = feats + adp(feats)
         logits = self.classifier(feats)
