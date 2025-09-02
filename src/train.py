@@ -156,23 +156,42 @@ class ViTLoRAClassifier(nn.Module):
 #  Gradient-projection utility (ORTHOG-SUBSPACE)
 # -----------------------------------------------------------------------------
 
+def _project_matrix_grad(G: torch.Tensor, U: torch.Tensor, UT: torch.Tensor):
+    """Helper: project rows of `G` (shape: *, d) onto orthogonal complement of span(U)."""
+    # G: (..., d) – we flatten the leading dims, project each row.
+    g_flat = G.view(-1, U.shape[0])  # (M, d)
+    proj = (g_flat @ UT.t()) @ U.t()  # (M, d)
+    g_flat.sub_(proj)
+    G.copy_(g_flat.view_as(G))
+
+
 def orthogonal_project_gradients(params: List[nn.Parameter], bases: torch.Tensor | None):
     """Project *params*' gradients onto the orthogonal complement of *bases*.
 
     *bases* should be a tensor of shape ``(d, k_total)`` containing stacked
-    column-orthonormal basis vectors.  If *bases* is ``None`` the call is a no-op.
+    column-orthonormal basis vectors. Only parameters whose *last* dimension
+    equals ``d`` are projected; others are left unchanged.  If *bases* is
+    ``None`` the call is a no-op.
     """
     if bases is None:
         return
     U = bases  # (d, k)
-    UT = U.t()
+    UT = U.t()  # (k, d)
+    d = U.shape[0]
+
     with torch.no_grad():
         for p in params:
             if p.grad is None:
                 continue
-            g = p.grad.view(-1, 1)
-            proj = U @ (UT @ g)
-            g.sub_(proj)
+            g = p.grad
+            # Case 1: vector of dim d
+            if g.ndim == 1 and g.shape[0] == d:
+                proj = U @ (UT @ g)
+                g.sub_(proj)
+            # Case 2: matrix/tensor whose last dim == d
+            elif g.shape[-1] == d:
+                _project_matrix_grad(g, U, UT)
+            # Other shapes are ignored as they are not in the feature sub-space
 
 # -----------------------------------------------------------------------------
 #  Single-task training loop
@@ -251,7 +270,7 @@ def train_one_task(
             # Gradient projection for FSR
             if replay_method == "FSR" and sketches is not None and len(sketches) > 0:
                 U = torch.cat([sketches[c].basis for c in sketches], dim=1)  # (d,k_tot)
-                orthogonal_project_gradients(model.parameters(), U)
+                orthogonal_project_gradients(list(model.parameters()), U)
 
             scaler.step(optimizer)
             scaler.update()
