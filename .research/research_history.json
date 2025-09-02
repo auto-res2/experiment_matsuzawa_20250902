@@ -6,5 +6,82 @@
     "incremental learning memory footprint",
     "continual learning quantization",
     "replay buffer optimization"
+  ],
+  "research_study_list": [
+    {
+      "title": "Continual Learning in Low-rank Orthogonal Subspaces"
+    },
+    {
+      "title": "Contextual Transformation Networks for Online Continual Learning"
+    },
+    {
+      "title": "SparCL: Sparse Continual Learning on the Edge"
+    },
+    {
+      "title": "MECTA: Memory-Economic Continual Test-Time Model Adaptation"
+    },
+    {
+      "title": "Improving Task-free Continual Learning by Distributionally Robust Memory Evolution"
+    },
+    {
+      "title": "Online Learned Continual Compression with Adaptive Quantization Modules"
+    },
+    {
+      "title": "Remember the Past: Distilling Datasets into Addressable Memories for Neural Networks"
+    },
+    {
+      "title": "Contextual Transformation Networks for Online Continual Learning"
+    },
+    {
+      "title": "Forget-free Continual Learning with Winning Subnetworks"
+    },
+    {
+      "title": "Forget-free Continual Learning with Winning Subnetworks"
+    },
+    {
+      "title": "Decoupling Learning and Remembering: A Bilevel Memory Framework With Knowledge Projection for Task-Incremental Learning"
+    },
+    {
+      "title": "Incremental Learning of Structured Memory via Closed-Loop Transcription"
+    },
+    {
+      "title": "Incremental few-shot learning via vector quantization in deep embedded space"
+    },
+    {
+      "title": "A Model or 603 Exemplars: Towards Memory-Efficient Class-Incremental Learning"
+    },
+    {
+      "title": "Computationally Budgeted Continual Learning: What Does Matter?"
+    },
+    {
+      "title": "Online Learned Continual Compression with Adaptive Quantization Modules"
+    },
+    {
+      "title": "Vector Quantization Prompting for Continual Learning"
+    },
+    {
+      "title": "Mitigating Forgetting in Online Continual Learning with  Neuron Calibration"
+    },
+    {
+      "title": "Uncertainty-guided Continual Learning with Bayesian Neural Networks"
+    },
+    {
+      "title": "Lifelong Domain Adaptation via Consolidated Internal Distribution"
+    },
+    {
+      "title": "Analysis of Stochastic Processes through Replay Buffers"
+    },
+    {
+      "title": "Analysis of Stochastic Processes through Replay Buffers"
+    },
+    {
+      "title": "Large Batch Experience Replay"
+    },
+    {
+      "title": "Large Batch Experience Replay"
+    },
+    {
+      "title": "Revisiting Fundamentals of Experience Replay"
+    }
   ]
 }
