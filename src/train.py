@@ -194,14 +194,17 @@ def train_one_task(
     for _ in range(epochs):
         for xb, yb in task_loader:
             xb, yb = xb.to(device, non_blocking=True), yb.to(device, non_blocking=True)
+
+            # ------------------------------------------------------------------
+            # Preserve a copy of the *current* mini-batch (before any replay)
+            # ------------------------------------------------------------------
+            xb_curr, yb_curr = xb.clone(), yb.clone()
+            curr_bs = yb_curr.size(0)
+
             # ------------------------------------------------------------------
             # Ensure *yb* is in the correct integer format expected by CE loss
             # ------------------------------------------------------------------
-            if yb.dtype != torch.long:
-                yb = yb.long()
-            if yb.dim() > 1:
-                # If accidentally provided as one-hot or shape (N, 1) → convert
-                yb = yb.view(-1)
+            yb = yb.long().view(-1)
 
             # -----------------------------
             # Add replay samples
@@ -230,7 +233,7 @@ def train_one_task(
             # -----------------------------
             with amp.autocast():
                 logits, feats = model(xb)
-                loss = criterion(logits, yb)
+                loss = criterion(logits, yb.long())  # ensure target dtype is correct
                 if (
                     replay_method == "FSR"
                     and sketches is not None
@@ -253,11 +256,12 @@ def train_one_task(
             # Update memory structures
             # -----------------------------
             if replay_method == "ER" and buffer is not None:
-                buffer.add_batch(xb[: len(yb)], yb)  # store only current mini-batch
+                # store **only** the current task samples, not the replay ones
+                buffer.add_batch(xb_curr, yb_curr)
             elif replay_method == "FSR" and sketches is not None:
                 with torch.no_grad():
-                    real_feats = feats[: len(yb)]  # exclude potential replay rows (ER only)
-                    for feat, lbl in zip(real_feats, yb):
+                    real_feats = feats[:curr_bs]  # exclude potential replay rows
+                    for feat, lbl in zip(real_feats, yb_curr):
                         lbl_int = int(lbl)
                         if lbl_int not in sketches:
                             sketches[lbl_int] = FDSketch(768, k=12)

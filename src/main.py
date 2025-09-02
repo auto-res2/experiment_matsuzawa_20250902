@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 from typing import Dict, List
 
@@ -158,7 +157,7 @@ def run_exp1():
         fname = f"{metric}_cifar100.pdf"
         save_lineplot(xs, ys_dict, ylabel, f"{metric.upper()} vs Task", fname)
 
-    print("Figures saved in .research/iteration3/images.")
+    print("Figures saved in .research/iteration6/images.")
 
 # -----------------------------------------------------------------------------
 #  CLI
