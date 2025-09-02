@@ -59,9 +59,10 @@ class FinetuneAgent(nn.Module):
         super().__init__()
         self.backbone = SimpleResNet18(num_classes)
         self.classifier = nn.Linear(self.backbone.feature_dim, num_classes)
+        # Move model to device before building the optimiser so param tensors are on the right device
+        self.to(device())
         self.opt = optim.SGD(self.parameters(), lr=lr, weight_decay=5e-4,
                              momentum=0.9, nesterov=True)
-        self.to(device())
 
     # ---------------------------------------------------------------------
     #  API required by the training harness
@@ -104,10 +105,10 @@ class BitSplitAgent(nn.Module):
         self.budget_bits = int(budget_mb * 1024 * 1024 * 8)  # MB → bits
         self.backbone = SimpleResNet18(num_classes)
         self.classifier = nn.Linear(self.backbone.feature_dim, num_classes)
+        self.to(device())
         self.opt = optim.SGD(self.parameters(), lr=lr, weight_decay=5e-4,
                              momentum=0.9, nesterov=True)
         self.current_bits: int = 0
-        self.to(device())
 
     # ------------------------------------------------------------------
     #  Required API

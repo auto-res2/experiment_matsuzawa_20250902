@@ -67,7 +67,7 @@ def save_line_plot(x: List, y: List, *, xlabel: str, ylabel: str, title: str, fi
     # ------------------------------------------------------------------
     # Save figure in the requested directory
     # ------------------------------------------------------------------
-    img_dir = Path(".research/iteration2/images")
+    img_dir = Path(".research/iteration3/images")  # updated directory as requested
     img_dir.mkdir(parents=True, exist_ok=True)
     path = img_dir / f"{filename}.pdf"
     try:
