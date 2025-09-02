@@ -1,6 +1,5 @@
 """src/train.py
-Training–related modules: model definition, memory buffers, sketching, and the
-single-task training loop.
+Training related utilities: model definitions, memory buffers, sketching, and the core vision training loop.
 """
 from __future__ import annotations
 
@@ -11,323 +10,313 @@ from typing import Dict, List, Tuple
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F  # noqa: F401
-import torch.optim as optim
+import torch.nn.functional as F
+import torch.optim as optim  # noqa: F401  # (kept for external use)
+import torch.utils.data as tud  # noqa: F401
 from torch.cuda import amp
 
-import timm
+# ----------------------------------------------------------------------------
+#  GENERAL UTILITIES
+# ----------------------------------------------------------------------------
 
-# -----------------------------------------------------------------------------
-#  Frequent-Directions Sketch
-# -----------------------------------------------------------------------------
+def set_seed(seed: int) -> None:
+    """Set RNG seeds for reproducibility across python / numpy / torch."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
+# ----------------------------------------------------------------------------
+#  FREQUENT-DIRECTIONS FEATURE SKETCH
+# ----------------------------------------------------------------------------
 class FDSketch(nn.Module):
-    """Lightweight Frequent-Directions sketch storing a per-class low-rank basis."""
+    """Online Frequent-Directions sketch that stores low-rank class statistics.
 
-    def __init__(
-        self,
-        d: int,
-        k: int,
-        device: str | torch.device = "cuda",
-        dtype: torch.dtype = torch.float32,
-    ):
+    Parameters
+    ----------
+    d : int
+        Feature dimensionality (e.g. 768 for ViT-B CLS token).
+    k : int
+        Target sketch rank.
+    precision : {"fp16", "fp32", "int8"}
+        Storage precision.  "int8" performs simple linear per-row quantisation
+        but returns de-quantised fp tensors for downstream computation.
+    device : str
+        Target device for internal buffers.
+    """
+
+    def __init__(self, d: int, k: int, *, precision: str = "fp16", device: str = "cuda"):
         super().__init__()
-        self.k = k
-        self.d = d
-        # use float32 to ensure SVD is supported on all GPUs
+        self.d, self.k = d, k
+        dtype = torch.float16 if precision == "fp16" else torch.float32
         self.register_buffer("S", torch.zeros(d, k, dtype=dtype, device=device))
         self.register_buffer("mu", torch.zeros(d, dtype=dtype, device=device))
-        self.n = 0  # number of observed samples
+        self.n: int = 0  # number of samples observed so far
+        self.precision = precision
 
+        if precision == "int8":  # extra buffers for simple uint8 quantisation
+            self.register_buffer("scale", torch.ones(d, 1, dtype=torch.float32, device=device))
+            self.register_buffer("zero", torch.zeros(d, 1, dtype=torch.float32, device=device))
+
+    # ------------------------------------------------------------------
+    #  INTERNAL HELPERS
+    # ------------------------------------------------------------------
     @torch.no_grad()
-    def update(self, x: torch.Tensor):
-        """Update the sketch with a new feature vector *x* (shape: ``(d,)``)."""
-        x = x.to(self.S.dtype)
+    def _quantise(self, x: torch.Tensor) -> torch.Tensor:
+        """Return *de-quantised* copy after storing quantisation params."""
+        if self.precision != "int8":
+            return x
+        max_, min_ = x.max(dim=1, keepdim=True).values, x.min(dim=1, keepdim=True).values
+        scale = (max_ - min_).clamp(min=1e-6) / 255
+        zp = (-min_ / scale).clamp(0, 255)
+        self.scale.copy_(scale)
+        self.zero.copy_(zp)
+        q = ((x / scale) + zp).round().clamp(0, 255).to(torch.uint8)
+        # de-quantise back to fp for downstream SVD
+        return q.float() * scale + (-zp * scale)
+
+    # ------------------------------------------------------------------
+    #  PUBLIC API
+    # ------------------------------------------------------------------
+    @torch.no_grad()
+    def update(self, feat: torch.Tensor) -> None:
+        """Update sketch with a single *feature vector* (no batch)."""
+        feat = feat.detach()
         self.n += 1
-        self.mu = self.mu + (x - self.mu) / self.n  # running mean
+        self.mu += (feat - self.mu) / self.n  # running mean
 
-        # ------- Frequent-Directions update -------
-        u = x.view(-1, 1)  # (d,1)
-        # cast to float32 for robust SVD on GPU/CPU
-        S_hat = torch.cat([self.S, u], dim=1).float()  # (d, k+1)
-
-        # Helper performing SVD on provided tensor
-        def _safe_svd(mat: torch.Tensor):
-            try:
-                return torch.linalg.svd(mat, full_matrices=False)
-            except Exception:
-                return None
-
-        # 1) Try on the current device first
-        svd_out = _safe_svd(S_hat)
-
-        # 2) Fallback – CPU double precision
-        if svd_out is None:
-            svd_out = _safe_svd(S_hat.cpu().double())
-            if svd_out is not None:
-                svd_out = tuple(t.to(S_hat.device, self.S.dtype) for t in svd_out)
-
-        # 3) Last–resort – add a small jitter and retry (CPU double)
-        if svd_out is None:
-            jitter = (1e-4 * torch.randn_like(S_hat)).cpu().double()
-            svd_out = _safe_svd((S_hat.cpu().double() + jitter))
-            if svd_out is not None:
-                svd_out = tuple(t.to(S_hat.device, self.S.dtype) for t in svd_out)
-
-        # If *all* attempts fail we skip the update for this sample.
-        if svd_out is None:
-            print("[WARN] SVD failed in FDSketch.update – skipping this update step.")
-            return
-
-        u_svd, s, _ = svd_out
-
-        # Shrinkage step
-        shrink = torch.clamp_min(s ** 2 - s[-1] ** 2, 0).sqrt()
-        self.S = (u_svd[:, : self.k] * shrink[: self.k]).to(self.S.dtype)
+        # Frequent-Directions core update (rank-k SVD shrinkage)
+        u = feat.view(-1, 1)  # (d,1)
+        S_hat = torch.cat([self.S, u], dim=1)  # (d, k+1)
+        try:
+            u_svd, s, _ = torch.linalg.svd(S_hat, full_matrices=False)
+        except RuntimeError:  # numerical fallback
+            s, u_svd = torch.linalg.eigvalsh(S_hat @ S_hat.T), None
+        shrink = torch.clamp(s ** 2 - s[-1] ** 2, min=0).sqrt()
+        self.S.copy_((u_svd[:, : self.k] * shrink[: self.k]))
+        if self.precision == "int8":
+            self.S.copy_(self._quantise(self.S))
 
     @property
     def basis(self) -> torch.Tensor:
-        """Return an orthonormal basis ``(d,k)`` for the sketch sub-space."""
+        """Return orthonormal basis Q (d×k) via QR."""
         q, _ = torch.linalg.qr(self.S, mode="reduced")
         return q
 
-# -----------------------------------------------------------------------------
-#  Reservoir buffer (ER baseline)
-# -----------------------------------------------------------------------------
 
-
+# ----------------------------------------------------------------------------
+#  RESERVOIR REPLAY BUFFER (baseline)
+# ----------------------------------------------------------------------------
 class ReservoirBuffer:
-    """Standard reservoir replay buffer used by Experience Replay (ER)."""
+    """Reservoir sampling buffer for Experience Replay baselines."""
 
-    def __init__(self, max_samples: int, img_shape: Tuple[int, int, int] = (3, 224, 224)):
+    def __init__(self, max_samples: int, img_shape: Tuple[int, int, int] = (3, 224, 224)) -> None:
         self.max = max_samples
-        self.x = torch.zeros((max_samples, *img_shape), dtype=torch.uint8)
-        self.y = torch.zeros(max_samples, dtype=torch.long)
-        self.n_seen = 0
+        self.images = torch.zeros((max_samples, *img_shape), dtype=torch.uint8)
+        self.labels = torch.zeros(max_samples, dtype=torch.long)
+        self.n_seen: int = 0
 
-    def add_batch(self, xb: torch.Tensor, yb: torch.Tensor):
-        """Add a mini-batch to the buffer using reservoir sampling."""
-        for xi, yi in zip(xb.cpu(), yb.cpu()):
+    # ------------------------------------------------------------------
+    def add_batch(self, x: torch.Tensor, y: torch.Tensor) -> None:
+        """Add a batch of *normalised* (0-1) images/labels to the buffer."""
+        for xi, yi in zip(x.cpu(), y.cpu()):
             j = self.n_seen
             if j < self.max:
-                self.x[j] = (xi * 255).to(torch.uint8)
-                self.y[j] = yi
+                self.images[j] = (xi * 255).to(torch.uint8)
+                self.labels[j] = yi
             else:
                 m = random.randint(0, self.n_seen)
                 if m < self.max:
-                    self.x[m] = (xi * 255).to(torch.uint8)
-                    self.y[m] = yi
+                    self.images[m] = (xi * 255).to(torch.uint8)
+                    self.labels[m] = yi
             self.n_seen += 1
 
     def sample(self, n: int, device: str = "cuda") -> Tuple[torch.Tensor, torch.Tensor]:
-        assert self.n_seen > 0, "Replay buffer is empty."
         idx = torch.randint(0, min(self.n_seen, self.max), (n,))
         return (
-            self.x[idx].float().div(255).to(device, non_blocking=True),
-            self.y[idx].to(device, non_blocking=True),
+            self.images[idx].float().div(255).to(device),
+            self.labels[idx].to(device),
         )
 
-# -----------------------------------------------------------------------------
-#  Vision model wrapper (ViT-LoRA + optional FSR decoder)
-# -----------------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    @property
+    def memory_MB(self) -> float:
+        """Rough memory usage in MB."""
+        return self.images.element_size() * self.images.nelement() / 1e6
 
 
-class ViTLoRAClassifier(nn.Module):
-    """ViT-B/16 backbone (frozen) + lightweight LoRA adapters + classifier head.
+# ----------------------------------------------------------------------------
+#  MODEL:  ViT-B/16  +  lightweight LoRA  +  optional decoder
+# ----------------------------------------------------------------------------
+try:
+    import timm  # local import avoids unnecessary dependency for NLP runs
+except ImportError as _err:  # pragma: no cover – handled at runtime
+    timm = None  # pylint: disable=invalid-name
 
-    When ``fsr=True`` an additional decoder is instantiated for Feature-Sketch
-    Replay (FSR).
-    """
+class ViT_LoRA(nn.Module):
+    """Frozen ViT-B backbone with a minimal LoRA-style CLS adapter."""
 
-    def __init__(self, num_classes: int = 100, fsr: bool = False):
+    def __init__(self, n_classes: int, *, use_decoder: bool = False):
         super().__init__()
+        if timm is None:
+            raise RuntimeError("timm is required for ViT_LoRA but not installed.")
         self.backbone = timm.create_model(
             "vit_base_patch16_224.augreg_in21k", pretrained=True, num_classes=0
         )
         for p in self.backbone.parameters():
-            p.requires_grad_(False)
+            p.requires_grad_(False)  # freeze backbone
 
-        # LoRA – here approximated with full linear adapters for simplicity.
-        self.lora_adapters = nn.ModuleList([nn.Linear(768, 768, bias=False) for _ in range(12)])
-        for l in self.lora_adapters:
-            nn.init.kaiming_uniform_(l.weight, a=math.sqrt(5))
+        # simple LoRA: an additional linear projection on CLS (rank = full)
+        self.lora = nn.Linear(768, 768, bias=False)
+        nn.init.kaiming_uniform_(self.lora.weight, a=math.sqrt(5))
 
         self.classifier = nn.Sequential(
             nn.Linear(768, 512),
             nn.GELU(),
             nn.Linear(512, 256),
             nn.GELU(),
-            nn.Linear(256, num_classes),
+            nn.Linear(256, n_classes),
         )
-        self.fsr = fsr
-        if fsr:
-            # Lightweight decoder mapping low-rank features back to embedding space
+
+        self.use_decoder = use_decoder
+        if use_decoder:
             self.decoder = nn.Sequential(
                 nn.Linear(768, 1024),
                 nn.GELU(),
                 nn.Linear(1024, 768),
             )
 
-    def forward(self, x: torch.Tensor | None = None, *, feats: torch.Tensor | None = None):
-        """Forward pass.
-
-        If *feats* is provided the backbone is skipped (used for latent replay).
-        Returns a tuple ``(logits, features)``.
-        """
+    # ------------------------------------------------------------------
+    def forward(
+        self,
+        x: torch.Tensor | None = None,
+        *,
+        feats: torch.Tensor | None = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Return (logits, features).  Exactly one of *x* or *feats* must be given."""
         if feats is None:
-            feats = self.backbone.forward_features(x)
-            # If the ViT returns a sequence of tokens (B, N, D) average-pool them
-            if feats.dim() == 3:
-                feats = feats.mean(dim=1)  # (B, D)
-            for adp in self.lora_adapters:  # simple residual LoRA adapters
-                feats = feats + adp(feats)
+            if x is None:
+                raise ValueError("Either x or feats must be provided to ViT_LoRA forward()")
+            feats = self.backbone(x)  # CLS token
+            feats = feats + self.lora(feats)
         logits = self.classifier(feats)
         return logits, feats
 
-# -----------------------------------------------------------------------------
-#  Gradient-projection utility (ORTHOG-SUBSPACE)
-# -----------------------------------------------------------------------------
 
-def _project_matrix_grad(G: torch.Tensor, U: torch.Tensor, UT: torch.Tensor):
-    """Helper: project rows of `G` (shape: *, d) onto orthogonal complement of span(U)."""
-    # G: (..., d) – we flatten the leading dims, project each row.
-    g_flat = G.view(-1, U.shape[0])  # (M, d)
-    proj = (g_flat @ UT.t()) @ U.t()  # (M, d)
-    g_flat.sub_(proj)
-    G.copy_(g_flat.view_as(G))
+# ----------------------------------------------------------------------------
+#  TRAINING HELPERS
+# ----------------------------------------------------------------------------
 
-
-def orthogonal_project_gradients(params: List[nn.Parameter], bases: torch.Tensor | None):
-    """Project *params*' gradients onto the orthogonal complement of *bases*.
-
-    *bases* should be a tensor of shape ``(d, k_total)`` containing stacked
-    column-orthonormal basis vectors. Only parameters whose *last* dimension
-    equals ``d`` are projected; others are left unchanged.  If *bases* is
-    ``None`` the call is a no-op.
-    """
-    if bases is None:
+def orth_proj_grads(params: List[nn.Parameter], U: torch.Tensor | None) -> None:
+    """Project gradients onto the orthogonal complement of basis *U* (d×k)."""
+    if U is None:
         return
-    U = bases  # (d, k)
-    UT = U.t()  # (k, d)
-    d = U.shape[0]
-
+    UT = U.t().contiguous()
     with torch.no_grad():
         for p in params:
             if p.grad is None:
                 continue
-            g = p.grad
-            # Case 1: vector of dim d
-            if g.ndim == 1 and g.shape[0] == d:
-                proj = U @ (UT @ g)
-                g.sub_(proj)
-            # Case 2: matrix/tensor whose last dim == d
-            elif g.shape[-1] == d:
-                _project_matrix_grad(g, U, UT)
-            # Other shapes are ignored as they are not in the feature sub-space
+            g = p.grad.data.view(-1, 1)
+            component = U @ (UT @ g)
+            g.sub_(component)
+
 
 # -----------------------------------------------------------------------------
-#  Single-task training loop
+#  SINGLE-TASK VISION TRAINING LOOP
 # -----------------------------------------------------------------------------
 
-def train_one_task(
+def train_task_vision(
+    model: ViT_LoRA,
+    loader: tud.DataLoader,
     *,
-    model: ViTLoRAClassifier,
-    task_loader: torch.utils.data.DataLoader,
-    replay_method: str,
-    optimizer: optim.Optimizer,
-    scaler: amp.GradScaler,
+    method: str,
+    seen_cls: List[int],
     buffer: ReservoirBuffer | None,
     sketches: Dict[int, FDSketch] | None,
-    seen_classes: List[int],
+    opt: optim.Optimizer,
+    scaler: amp.GradScaler,
     device: str = "cuda",
-    epochs: int = 10,
-):
-    """Train *model* on a single task with the specified replay mechanism."""
-
-    criterion = nn.CrossEntropyLoss()
+    λ_align: float = 0.3,
+) -> None:
+    """Train *model* for one task/epoch using one of {finetune, er, fsr_k*}."""
+    ce = nn.CrossEntropyLoss()
     model.train()
 
-    for _ in range(epochs):
-        for xb, yb in task_loader:
-            xb, yb = xb.to(device, non_blocking=True), yb.to(device, non_blocking=True)
+    for _epoch in range(10):  # fixed epoch budget
+        for xb, yb in loader:
+            xb, yb = xb.to(device), yb.to(device)
+            B = len(xb)
 
-            # ------------------------------------------------------------------
-            # Preserve a copy of the *current* mini-batch (before any replay)
-            # ------------------------------------------------------------------
-            xb_curr, yb_curr = xb.clone(), yb.clone()
-            curr_bs = yb_curr.size(0)
-
-            # ------------------------------------------------------------------
-            # Ensure *yb* is in the correct integer format expected by CE loss
-            # ------------------------------------------------------------------
-            yb = yb.long().view(-1)
-
-            # -----------------------------
-            # Add replay samples
-            # -----------------------------
-            if replay_method == "ER" and buffer and buffer.n_seen > 0:
-                xr, yr = buffer.sample(len(xb), device)
-                xb = torch.cat([xb, xr], dim=0)
-                yb = torch.cat([yb, yr.long()], dim=0)
-            elif (
-                replay_method == "FSR"
-                and sketches is not None
-                and len(sketches) > 0  # only when we already have some sketches
-            ):
-                available_classes = list(sketches.keys())
-                cls_idx = torch.randint(0, len(available_classes), (len(xb),), device=device)
-                cls_ids = [available_classes[i.item()] for i in cls_idx]
-                mu = torch.stack([sketches[c].mu for c in cls_ids])  # (B,d)
-                basis = torch.stack([sketches[c].basis for c in cls_ids])  # (B,d,k)
-                z = torch.randn(len(xb), basis.size(-1), dtype=basis.dtype, device=device)
-                f_tilde = mu + torch.bmm(basis, z.unsqueeze(-1)).squeeze(-1)
+            # ----------------------------------------------------
+            # 1) Add replay (ER or FSR)
+            # ----------------------------------------------------
+            replay_loss = torch.tensor(0.0, device=device)
+            if method == "er" and buffer and buffer.n_seen:
+                xr, yr = buffer.sample(B)
+                xb = torch.cat([xb, xr], 0)
+                yb = torch.cat([yb, yr], 0)
+            elif method.startswith("fsr") and seen_cls:
+                cls_sample = torch.tensor(random.choices(seen_cls, k=B), device=device)
+                mu = torch.stack([sketches[c].mu for c in cls_sample.tolist()])
+                basis = torch.stack([sketches[c].basis for c in cls_sample.tolist()])
+                z = torch.randn(B, basis.shape[-1], device=device)
+                f_rep = mu + torch.bmm(basis, z.unsqueeze(-1)).squeeze(-1)
                 with torch.no_grad():
-                    pseudo_logits, _ = model(feats=model.decoder(f_tilde))
-                pseudo_targets = torch.tensor(cls_ids, device=device, dtype=torch.long)
-            # -----------------------------
-            # Forward / backward
-            # -----------------------------
+                    rep_logits, _ = model(feats=model.decoder(f_rep))
+                replay_loss = ce(rep_logits, cls_sample)
+
+            # ----------------------------------------------------
+            # 2) Forward + losses
+            # ----------------------------------------------------
             with amp.autocast():
                 logits, feats = model(xb)
-                loss = criterion(logits, yb.long())  # ensure target dtype is correct
-                if (
-                    replay_method == "FSR"
-                    and sketches is not None
-                    and len(sketches) > 0
-                ):
-                    loss_re = criterion(pseudo_logits, pseudo_targets)
-                    loss = loss + 0.3 * loss_re
+                loss_real = ce(logits, yb)
+
+                # Alignment loss (FSR only)
+                align_loss = torch.tensor(0.0, device=device)
+                if method.startswith("fsr") and seen_cls:
+                    for c in torch.unique(yb):
+                        U = sketches[int(c.item())].basis  # (d,k)
+                        proj = feats[yb == c] @ U @ U.t()
+                        align_loss += F.mse_loss(feats[yb == c], proj)
+                    align_loss /= len(torch.unique(yb))
+
+                loss = loss_real + replay_loss + λ_align * align_loss
+
             scaler.scale(loss).backward()
 
-            # Gradient projection for FSR
-            if replay_method == "FSR" and sketches is not None and len(sketches) > 0:
-                U = torch.cat([sketches[c].basis for c in sketches], dim=1)  # (d,k_tot)
-                orthogonal_project_gradients(list(model.parameters()), U)
+            # 3) Orthogonal gradient projection (FSR)
+            if method.startswith("fsr") and seen_cls:
+                U_all = torch.cat([sketches[c].basis for c in seen_cls], 1)
+                orth_proj_grads(model.parameters(), U_all)
 
-            scaler.step(optimizer)
+            scaler.step(opt)
             scaler.update()
-            optimizer.zero_grad(set_to_none=True)
+            opt.zero_grad(set_to_none=True)
 
-            # -----------------------------
-            # Update memory structures
-            # -----------------------------
-            if replay_method == "ER" and buffer is not None:
-                # store **only** the current task samples, not the replay ones
-                buffer.add_batch(xb_curr, yb_curr)
-            elif replay_method == "FSR" and sketches is not None:
+            # ----------------------------------------------------
+            # 4) Memory updates
+            # ----------------------------------------------------
+            if method == "er":
+                buffer.add_batch(xb[:B], yb[:B])
+            elif method.startswith("fsr"):
                 with torch.no_grad():
-                    real_feats = feats[:curr_bs]  # exclude potential replay rows
-                    for feat, lbl in zip(real_feats, yb_curr):
-                        lbl_int = int(lbl)
-                        if lbl_int not in sketches:
-                            sketches[lbl_int] = FDSketch(768, k=12, device=feat.device)
-                        sketches[lbl_int].update(feat.detach())
+                    feats_curr = feats[:B]
+                    for f, y in zip(feats_curr, yb[:B]):
+                        c = int(y.item())
+                        if c not in sketches:
+                            sketches[c] = FDSketch(768, k=int(method.split("_k")[-1]), device=device)
+                        sketches[c].update(f)
+
 
 __all__ = [
+    "set_seed",
     "FDSketch",
     "ReservoirBuffer",
-    "ViTLoRAClassifier",
-    "orthogonal_project_gradients",
-    "train_one_task",
+    "ViT_LoRA",
+    "orth_proj_grads",
+    "train_task_vision",
 ]

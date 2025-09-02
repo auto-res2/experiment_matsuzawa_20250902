@@ -1,5 +1,6 @@
 """src/evaluate.py
-Evaluation utilities: metrics computation and plotting helpers.
+Evaluation helpers: accuracy metrics, forgetting/accuracy aggregation, and
+common publication-quality plotting utilities.
 """
 from __future__ import annotations
 
@@ -7,65 +8,83 @@ from pathlib import Path
 from typing import Dict, List
 
 import numpy as np
-from matplotlib import pyplot as plt
+import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.metrics import accuracy_score
+import torch
+import torch.utils.data as tud
 
-sns.set(style="whitegrid", context="paper", font_scale=1.4)
+sns.set_style("whitegrid")
 
-# -----------------------------------------------------------------------------
-#  Metric helpers
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+#  BASIC METRICS
+# ---------------------------------------------------------------------------
 
-def calc_avg_acc(acc_matrix: np.ndarray) -> float:
-    """Average accuracy after final task."""
-    return float(acc_matrix[-1].mean() * 100)
+def accuracy(loader: tud.DataLoader, model: torch.nn.Module, *, device: str = "cuda") -> float:
+    """Compute *top-1* accuracy of *model* on *loader* (no grad)."""
+    model.eval()
+    preds, gts = [], []
+    with torch.no_grad():
+        for xb, yb in loader:
+            xb = xb.to(device)
+            yb = yb.to(device)
+            out, _ = model(xb)
+            preds.append(out.argmax(1).cpu())
+            gts.append(yb.cpu())
+    preds = torch.cat(preds)
+    gts = torch.cat(gts)
+    return accuracy_score(gts, preds)
 
 
-def calc_forgetting(acc_matrix: np.ndarray) -> float:
-    """Average forgetting across tasks (Chaudhry et al. 2018)."""
-    T = acc_matrix.shape[0]
-    fgt = []
+# ---------------------------------------------------------------------------
+#  CONTINUAL-LEARNING AGGREGATES
+# ---------------------------------------------------------------------------
+
+def avg_accuracy(acc_mat: np.ndarray) -> float:
+    """Average over final-row accuracies (ACC metric)."""
+    return acc_mat[-1].mean() * 100.0
+
+
+def avg_forgetting(acc_mat: np.ndarray) -> float:
+    """Average forgetting as defined in Lopez-Paz & Ranzato (2017)."""
+    T = acc_mat.shape[0]
+    fgt: List[float] = []
     for t in range(T - 1):
-        prev_max = acc_matrix[t, t]
-        later = acc_matrix[-1, t]
-        fgt.append(max(0, prev_max - later))
-    return float(np.mean(fgt) * 100)
+        fgt.append(max(0, acc_mat[t, t] - acc_mat[-1, t]))
+    return float(np.mean(fgt) * 100.0)
 
-# -----------------------------------------------------------------------------
-#  Plotting helpers
-# -----------------------------------------------------------------------------
 
-def save_lineplot(
-    xs: List[int],
-    ys_dict: Dict[str, List[float]],
+# ---------------------------------------------------------------------------
+#  PLOTTING UTILITIES
+# ---------------------------------------------------------------------------
+
+def lineplot(
+    xs: List[int] | np.ndarray,
+    ys_dict: Dict[str, List[float] | np.ndarray],
     ylabel: str,
     title: str,
-    fname: str,
-):
-    """Save a publication-quality line plot *fname* in PDF format.
-
-    All images are stored under `.research/iteration11/images` as required.
-    """
-    # Ensure the output directory exists
-    out_dir = Path(".research/iteration11/images")
-    out_dir.mkdir(parents=True, exist_ok=True)
-    full_path = out_dir / fname
-
-    plt.figure(figsize=(6, 4))
+    fname: Path | str,
+) -> None:
+    """Matplotlib line plot with automatic annotation & tight-layout save."""
+    plt.figure(figsize=(7, 4))
     for name, ys in ys_dict.items():
-        plt.plot(xs, ys, marker="o", label=name)
-        for x, y in zip(xs, ys):
-            plt.text(x, y, f"{y:.1f}", fontsize=7, ha="center", va="bottom")
+        plt.plot(xs, ys, label=name, marker="o", markersize=3)
     plt.xlabel("Task")
     plt.ylabel(ylabel)
     plt.title(title)
     plt.legend()
+    # annotate final points
+    for name, ys in ys_dict.items():
+        plt.text(xs[-1], ys[-1], f"{ys[-1]:.1f}", fontsize=6)
     plt.tight_layout()
-    try:
-        plt.savefig(full_path, bbox_inches="tight")
-        print(f"Saved figure → {full_path}")
-    except Exception as e:
-        print(f"[WARN] Could not save figure {full_path}: {e}")
+    plt.savefig(fname, bbox_inches="tight")
     plt.close()
+    print(f"Saved {fname}")
 
-__all__ = ["calc_avg_acc", "calc_forgetting", "save_lineplot"]
+
+__all__ = [
+    "accuracy",
+    "avg_accuracy",
+    "avg_forgetting",
+    "lineplot",
+]
