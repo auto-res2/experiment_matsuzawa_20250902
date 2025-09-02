@@ -199,29 +199,39 @@ def train_one_task(
                 xr, yr = buffer.sample(len(xb), device)
                 xb = torch.cat([xb, xr], dim=0)
                 yb = torch.cat([yb, yr], dim=0)
-            elif replay_method == "FSR" and seen_classes:
-                cls_idx = torch.randint(0, len(seen_classes), (len(xb),), device=device)
-                cls_ids = [seen_classes[i.item()] for i in cls_idx]
+            elif (
+                replay_method == "FSR"
+                and sketches is not None
+                and len(sketches) > 0  # only when we already have some sketches
+            ):
+                available_classes = list(sketches.keys())
+                cls_idx = torch.randint(0, len(available_classes), (len(xb),), device=device)
+                cls_ids = [available_classes[i.item()] for i in cls_idx]
                 mu = torch.stack([sketches[c].mu for c in cls_ids])  # (B,d)
                 basis = torch.stack([sketches[c].basis for c in cls_ids])  # (B,d,k)
                 z = torch.randn(len(xb), basis.size(-1), dtype=basis.dtype, device=device)
                 f_tilde = mu + torch.bmm(basis, z.unsqueeze(-1)).squeeze(-1)
                 with torch.no_grad():
                     pseudo_logits, _ = model(feats=model.decoder(f_tilde))
+                pseudo_targets = torch.tensor(cls_ids, device=device)
             # -----------------------------
             # Forward / backward
             # -----------------------------
             with amp.autocast():
                 logits, feats = model(xb)
                 loss = criterion(logits, yb)
-                if replay_method == "FSR" and seen_classes:
-                    loss_re = criterion(pseudo_logits, cls_idx)
+                if (
+                    replay_method == "FSR"
+                    and sketches is not None
+                    and len(sketches) > 0
+                ):
+                    loss_re = criterion(pseudo_logits, pseudo_targets)
                     loss = loss + 0.3 * loss_re
             scaler.scale(loss).backward()
 
             # Gradient projection for FSR
-            if replay_method == "FSR" and seen_classes:
-                U = torch.cat([sketches[c].basis for c in seen_classes], dim=1)  # (d,k_tot)
+            if replay_method == "FSR" and sketches is not None and len(sketches) > 0:
+                U = torch.cat([sketches[c].basis for c in sketches], dim=1)  # (d,k_tot)
                 orthogonal_project_gradients(model.parameters(), U)
 
             scaler.step(optimizer)
@@ -235,7 +245,7 @@ def train_one_task(
                 buffer.add_batch(xb[: len(yb)], yb)
             elif replay_method == "FSR" and sketches is not None:
                 with torch.no_grad():
-                    real_feats = feats[: len(yb)]  # exclude potential replay rows
+                    real_feats = feats[: len(yb)]  # exclude potential replay rows (ER only)
                     for feat, lbl in zip(real_feats, yb):
                         lbl_int = lbl.item()
                         if lbl_int not in sketches:
