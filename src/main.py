@@ -158,7 +158,7 @@ def run_exp1():
         fname = f"{metric}_cifar100.pdf"
         save_lineplot(xs, ys_dict, ylabel, f"{metric.upper()} vs Task", fname)
 
-    print("Figures saved in .research/iteration2/images.")
+    print("Figures saved in .research/iteration3/images.")
 
 # -----------------------------------------------------------------------------
 #  CLI
@@ -166,7 +166,13 @@ def run_exp1():
 
 def parse_args():
     parser = argparse.ArgumentParser(description="FSR Continual-Learning experiments")
-    parser.add_argument("exp", choices=["exp1"], help="Experiment id to run")
+    parser.add_argument(
+        "exp",
+        nargs="?",  # optional positional argument
+        choices=["exp1"],
+        default="exp1",
+        help="Experiment id to run (default: exp1)",
+    )
     return parser.parse_args()
 
 
