@@ -1,0 +1,30 @@
+/home/runner/work/experiment_matsuzawa_20250902/experiment_matsuzawa_20250902/src/main.py:80: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = amp.GradScaler()
+  0%|          | 0.00/169M [00:00<?, ?B/s]  1%|▏         | 2.42M/169M [00:00<00:06, 24.2MB/s]  8%|▊         | 13.4M/169M [00:00<00:02, 74.5MB/s] 14%|█▍        | 24.1M/169M [00:00<00:01, 89.2MB/s] 20%|█▉        | 33.6M/169M [00:00<00:01, 91.6MB/s] 25%|██▌       | 42.8M/169M [00:00<00:01, 91.6MB/s] 31%|███       | 52.1M/169M [00:00<00:01, 91.9MB/s] 36%|███▋      | 61.4M/169M [00:00<00:01, 92.4MB/s] 42%|████▏     | 70.9M/169M [00:00<00:01, 93.0MB/s] 48%|████▊     | 80.4M/169M [00:00<00:00, 93.8MB/s] 53%|█████▎    | 90.1M/169M [00:01<00:00, 94.6MB/s] 59%|█████▉    | 99.9M/169M [00:01<00:00, 95.5MB/s] 65%|██████▍   | 110M/169M [00:01<00:00, 96.2MB/s]  71%|███████   | 120M/169M [00:01<00:00, 97.1MB/s] 77%|███████▋  | 130M/169M [00:01<00:00, 98.2MB/s] 83%|████████▎ | 140M/169M [00:01<00:00, 99.2MB/s] 89%|████████▉ | 150M/169M [00:01<00:00, 100MB/s]  95%|█████████▍| 160M/169M [00:01<00:00, 101MB/s]100%|██████████| 169M/169M [00:01<00:00, 94.6MB/s]
+/home/runner/work/experiment_matsuzawa_20250902/experiment_matsuzawa_20250902/src/train.py:231: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with amp.autocast():
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/runner/work/experiment_matsuzawa_20250902/experiment_matsuzawa_20250902/src/main.py", line 188, in <module>
+    main()
+  File "/home/runner/work/experiment_matsuzawa_20250902/experiment_matsuzawa_20250902/src/main.py", line 182, in main
+    run_exp1()
+  File "/home/runner/work/experiment_matsuzawa_20250902/experiment_matsuzawa_20250902/src/main.py", line 101, in run_exp1
+    train_one_task(
+  File "/home/runner/work/experiment_matsuzawa_20250902/experiment_matsuzawa_20250902/src/train.py", line 233, in train_one_task
+    loss = criterion(logits, yb)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/_tool/Python/3.11.13/x64/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1773, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/_tool/Python/3.11.13/x64/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1784, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/_tool/Python/3.11.13/x64/lib/python3.11/site-packages/torch/nn/modules/loss.py", line 1310, in forward
+    return F.cross_entropy(
+           ^^^^^^^^^^^^^^^^
+  File "/home/runner/work/_tool/Python/3.11.13/x64/lib/python3.11/site-packages/torch/nn/functional.py", line 3462, in cross_entropy
+    return torch._C._nn.cross_entropy_loss(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: Expected target size [64, 100], got [64]
