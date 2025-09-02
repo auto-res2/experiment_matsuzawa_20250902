@@ -11,7 +11,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F  # noqa: F401  (may be useful for future exps)
+import torch.nn.functional as F  # noqa: F401
 import torch.optim as optim
 from torch.cuda import amp
 
@@ -20,6 +20,7 @@ import timm
 # -----------------------------------------------------------------------------
 #  Frequent-Directions Sketch
 # -----------------------------------------------------------------------------
+
 
 class FDSketch(nn.Module):
     """Lightweight Frequent-Directions sketch storing a per-class low-rank basis."""
@@ -60,6 +61,7 @@ class FDSketch(nn.Module):
 #  Reservoir buffer (ER baseline)
 # -----------------------------------------------------------------------------
 
+
 class ReservoirBuffer:
     """Standard reservoir replay buffer used by Experience Replay (ER)."""
 
@@ -94,6 +96,7 @@ class ReservoirBuffer:
 # -----------------------------------------------------------------------------
 #  Vision model wrapper (ViT-LoRA + optional FSR decoder)
 # -----------------------------------------------------------------------------
+
 
 class ViTLoRAClassifier(nn.Module):
     """ViT-B/16 backbone (frozen) + lightweight LoRA adapters + classifier head.
@@ -191,6 +194,14 @@ def train_one_task(
     for _ in range(epochs):
         for xb, yb in task_loader:
             xb, yb = xb.to(device, non_blocking=True), yb.to(device, non_blocking=True)
+            # ------------------------------------------------------------------
+            # Ensure *yb* is in the correct integer format expected by CE loss
+            # ------------------------------------------------------------------
+            if yb.dtype != torch.long:
+                yb = yb.long()
+            if yb.dim() > 1:
+                # If accidentally provided as one-hot or shape (N, 1) → convert
+                yb = yb.view(-1)
 
             # -----------------------------
             # Add replay samples
@@ -198,7 +209,7 @@ def train_one_task(
             if replay_method == "ER" and buffer and buffer.n_seen > 0:
                 xr, yr = buffer.sample(len(xb), device)
                 xb = torch.cat([xb, xr], dim=0)
-                yb = torch.cat([yb, yr], dim=0)
+                yb = torch.cat([yb, yr.long()], dim=0)
             elif (
                 replay_method == "FSR"
                 and sketches is not None
@@ -213,7 +224,7 @@ def train_one_task(
                 f_tilde = mu + torch.bmm(basis, z.unsqueeze(-1)).squeeze(-1)
                 with torch.no_grad():
                     pseudo_logits, _ = model(feats=model.decoder(f_tilde))
-                pseudo_targets = torch.tensor(cls_ids, device=device)
+                pseudo_targets = torch.tensor(cls_ids, device=device, dtype=torch.long)
             # -----------------------------
             # Forward / backward
             # -----------------------------
@@ -242,12 +253,12 @@ def train_one_task(
             # Update memory structures
             # -----------------------------
             if replay_method == "ER" and buffer is not None:
-                buffer.add_batch(xb[: len(yb)], yb)
+                buffer.add_batch(xb[: len(yb)], yb)  # store only current mini-batch
             elif replay_method == "FSR" and sketches is not None:
                 with torch.no_grad():
                     real_feats = feats[: len(yb)]  # exclude potential replay rows (ER only)
                     for feat, lbl in zip(real_feats, yb):
-                        lbl_int = lbl.item()
+                        lbl_int = int(lbl)
                         if lbl_int not in sketches:
                             sketches[lbl_int] = FDSketch(768, k=12)
                         sketches[lbl_int].update(feat.detach())
