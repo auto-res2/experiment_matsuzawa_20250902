@@ -25,10 +25,11 @@ import timm
 class FDSketch(nn.Module):
     """Lightweight Frequent-Directions sketch storing a per-class low-rank basis."""
 
-    def __init__(self, d: int, k: int, device: str = "cuda", dtype: torch.dtype = torch.float16):
+    def __init__(self, d: int, k: int, device: str = "cuda", dtype: torch.dtype = torch.float32):
         super().__init__()
         self.k = k
         self.d = d
+        # use float32 to ensure SVD is supported on all GPUs
         self.register_buffer("S", torch.zeros(d, k, dtype=dtype, device=device))
         self.register_buffer("mu", torch.zeros(d, dtype=dtype, device=device))
         self.n = 0  # number of observed samples
@@ -42,14 +43,15 @@ class FDSketch(nn.Module):
 
         # ------- Frequent-Directions update -------
         u = x.view(-1, 1)  # (d,1)
-        S_hat = torch.cat([self.S, u], dim=1)  # (d, k+1)
+        # cast to float32 for robust SVD on GPU/CPU
+        S_hat = torch.cat([self.S, u], dim=1).float()  # (d, k+1)
         try:
             u_svd, s, _ = torch.linalg.svd(S_hat, full_matrices=False)
         except RuntimeError:
             # fallback for older torch versions
             u_svd, s, _ = torch.svd(S_hat)
         shrink = torch.clamp_min(s ** 2 - s[-1] ** 2, 0).sqrt()
-        self.S = (u_svd[:, : self.k] * shrink[: self.k])
+        self.S = (u_svd[:, : self.k] * shrink[: self.k]).to(self.S.dtype)
 
     @property
     def basis(self) -> torch.Tensor:

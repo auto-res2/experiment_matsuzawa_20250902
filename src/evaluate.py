@@ -44,10 +44,10 @@ def save_lineplot(
 ):
     """Save a publication-quality line plot *fname* in PDF format.
 
-    All images are stored under `.research/iteration7/images` as required.
+    All images are stored under `.research/iteration8/images` as required.
     """
     # Ensure the output directory exists
-    out_dir = Path(".research/iteration7/images")
+    out_dir = Path(".research/iteration8/images")
     out_dir.mkdir(parents=True, exist_ok=True)
     full_path = out_dir / fname
 
